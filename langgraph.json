@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "payroll_service_graph": "app.payroll_service_agent.graph.graph_builder:build_graph"
+  },
+  "env": ".env"
+}
