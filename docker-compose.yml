@@ -11,3 +11,21 @@ services:
       - .:/app
     restart: on-failure
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  langgraph-playground:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    ports:
+      - "2024:2024"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: on-failure
+    command:
+      [
+        "sh",
+        "-c",
+        "pip install --no-cache-dir 'langgraph-cli[inmem]' && langgraph dev --host 0.0.0.0 --port 2024 --allow-blocking"
+      ]

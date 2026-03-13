@@ -92,6 +92,8 @@ app/
    ```
 7. **Access the services:**
    * POST: http://localhost:8000/api/v1/process
+    * LangGraph Playground API: http://localhost:2024
+    * LangGraph Studio: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
     * Sample Body:
     ```
      {
@@ -111,3 +113,7 @@ app/
         "result": "Hello, world! req-12345"
     }
     ```
+
+## LangGraph Playground
+
+- Local setup and Studio connection steps: [docs/langgraph_playground.md](docs/langgraph_playground.md)
