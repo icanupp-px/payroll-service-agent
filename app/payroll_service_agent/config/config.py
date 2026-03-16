@@ -26,6 +26,18 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("PAYROLL_STATUS_API_KEY", "payroll_status_api_key"),
     )
+    payroll_status_api_consumer: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "PAYROLL_STATUS_API_CONSUMER", "payroll_status_api_consumer"
+        ),
+    )
+    payroll_status_api_x_payx_cnsmr: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "PAYROLL_STATUS_API_X_PAYX_CNSMR", "payroll_status_api_x_payx_cnsmr"
+        ),
+    )
 
     payroll_status_api_verify_ssl: bool = Field(
         default=True,
