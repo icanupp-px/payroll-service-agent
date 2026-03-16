@@ -17,6 +17,7 @@ class PayrollServiceOrchestrator:
         initial_state = PayrollServiceGraphState(
             request_id=request.request_id,
             payperiod_id=request.payperiod_id,
+            metadata=request.metadata,
             status=None,
             result=None,
         )
@@ -33,6 +34,7 @@ class PayrollServiceOrchestrator:
         return ProcessResponse(
             request_id=request.request_id,
             status="completed",
+            payperiod_status=final_state.status,
             result=final_state.result or "No result generated.",
         )
 

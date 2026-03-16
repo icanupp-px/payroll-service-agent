@@ -97,20 +97,23 @@ app/
     * Sample Body:
     ```
      {
-        "request_id": "req-12345",
-        "payperiod_id": "TKTKTK",
-        "metadata": {
-            "source": "local-test",
-            "channel": "manual"
-        }
-    }
+  "request_id": "req-12345",
+  "payperiod_id": "970008620616670",
+  "metadata": {
+    "userguid": "CA:751234564482",
+    "cltacctnbrs": "CA:70309024",
+    "projection": "payperiod",
+    "x-payx-cnsmr": "CA DOMAIN"
+  }
+}
     ```
     * Sample Response:
     ```
     {
-        "request_id": "req-12345",
-        "status": "completed",
-        "result": "Hello, world! req-12345"
+    "request_id": "req-12345",
+    "status": "completed",
+    "payperiod_status": "Entry",
+    "result": "Hello, world! req-12345"
     }
     ```
 

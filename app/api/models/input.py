@@ -10,4 +10,5 @@ class ProcessRequest(BaseModel):
 class ProcessResponse(BaseModel):
     request_id: str
     status: str
+    payperiod_status: str | None = None
     result: str
