@@ -10,7 +10,6 @@ dist/
 *.egg-info/
 
 # Virtual environments and local env files
-.env
 .venv
 env/
 venv/
