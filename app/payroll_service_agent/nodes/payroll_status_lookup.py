@@ -6,6 +6,10 @@ from urllib.error import HTTPError, URLError
 
 from app.payroll_service_agent.config.config import settings
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
+from app.payroll_service_agent.nodes.utils.payroll_status_lookup import (
+    extract_payperiod_status_from_payload,
+    find_payperiod_status_value,
+)
 from app.payroll_service_agent.utils.logging_utils import setup_logger
 
 
@@ -14,56 +18,6 @@ log = setup_logger(__name__)
 ALL_PAYPERIOD_STATUSES = (
     "Entry,Initial,Completed,Completed by MEC,Processing,Reissued,Released,Reversed"
 )
-
-
-def _find_payperiod_status_value(data: object) -> str | None:
-    if isinstance(data, dict):
-        value = data.get("payPeriodStatusValue")
-        if isinstance(value, str) and value.strip():
-            return value
-        for nested_value in data.values():
-            found = _find_payperiod_status_value(nested_value)
-            if found:
-                return found
-    elif isinstance(data, list):
-        for item in data:
-            found = _find_payperiod_status_value(item)
-            if found:
-                return found
-    return None
-
-
-def _extract_payperiod_status_from_payload(payload: object, requested_payperiod_id: str) -> str | None:
-    if not isinstance(payload, dict):
-        return None
-
-    content = payload.get("content")
-    if not isinstance(content, dict):
-        return None
-
-    pay_periods = content.get("payPeriods")
-    if not isinstance(pay_periods, list):
-        return None
-
-    # Prefer the matching payPeriodId when present.
-    for item in pay_periods:
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("payPeriodId")) == requested_payperiod_id:
-            value = item.get("payPeriodStatusValue")
-            if isinstance(value, str) and value.strip():
-                return value
-
-    # Otherwise, return the first non-empty payPeriodStatusValue in the list.
-    for item in pay_periods:
-        if not isinstance(item, dict):
-            continue
-        value = item.get("payPeriodStatusValue")
-        if isinstance(value, str) and value.strip():
-            return value
-
-    return None
-
 
 def request_router(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     log.info("Routing request")
@@ -135,9 +89,9 @@ def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
         with urlopen(req, timeout=settings.payroll_status_api_timeout_s, context=ssl_ctx) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
             # payperiod_status must come from payPeriodStatusValue from the REST API response.
-            payperiod_status_value = _extract_payperiod_status_from_payload(
+            payperiod_status_value = extract_payperiod_status_from_payload(
                 payload, state.payperiod_id
-            ) or _find_payperiod_status_value(payload)
+            ) or find_payperiod_status_value(payload)
             state.status = payperiod_status_value or "unknown"
     except HTTPError as e:
         # Include upstream error payload so 4xx/5xx failures are actionable.
