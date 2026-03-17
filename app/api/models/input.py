@@ -11,4 +11,4 @@ class ProcessResponse(BaseModel):
     request_id: str
     status: str
     payperiod_status: str | None = None
-    result: str
+    payperiod_holds: list | None = None

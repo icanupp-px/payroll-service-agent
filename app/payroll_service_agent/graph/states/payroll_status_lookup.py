@@ -6,4 +6,4 @@ class PayrollServiceGraphState(BaseModel):
     payperiod_id: str | None = None
     metadata: dict[str, str] | None = None
     status: str | None = None
-    result: str | None = None
+    holds: list[dict] | None = None  # Holds info from API
