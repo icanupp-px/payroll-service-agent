@@ -94,28 +94,49 @@ app/
    * POST: http://localhost:8000/api/v1/process
     * LangGraph Playground API: http://localhost:2024
     * LangGraph Studio: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
-    * Sample Body:
-    ```
-     {
-  "request_id": "req-12345",
-  "payperiod_id": "970008620616670",
-  "metadata": {
-    "userguid": "CA:751234564482",
-    "cltacctnbrs": "CA:70309024",
-    "projection": "payperiod",
-    "x-payx-cnsmr": "CA DOMAIN"
-  }
-}
-    ```
-    * Sample Response:
-    ```
-    {
-    "request_id": "req-12345",
-    "status": "completed",
-    "payperiod_status": "Entry",
-    "result": "Hello, world! req-12345"
-    }
-    ```
+        * Sample Request/Response - Flow 1 (by payperiod_id):
+        ```json
+        {
+            "request_id": "req-12345",
+            "payperiod_id": "970008620616670",
+            "metadata": {
+                "userguid": "CA:751234564482",
+                "cltacctnbrs": "CA:70309024",
+                "projection": "payperiod",
+                "x-payx-cnsmr": "CA DOMAIN"
+            }
+        }
+        ```
+        ```json
+        {
+            "request_id": "req-12345",
+            "payperiod_status": "Entry",
+        }
+        ```
+
+        * Sample Request/Response - Flow 2 (by check_date):
+        ```json
+        {
+            "request_id": "req-12346",
+            "check_date": "2025-03-31",
+            "metadata": {
+                "userguid": "CA:751234564482",
+                "cltacctnbrs": "CA:70309024",
+                "projection": "payperiod",
+                "page": "1",
+                "x-payx-cnsmr": "CA DOMAIN"
+            }
+        }
+        ```
+        ```json
+        {
+            "request_id": "req-12346",
+            "payrollStatusBySubmitTime": {
+                "2025-03-31T10:11:12Z": "Initial",
+                "2025-03-31T12:30:00Z": "Completed by MEC"
+            }
+        }
+        ```
 
 ## LangGraph Playground
 

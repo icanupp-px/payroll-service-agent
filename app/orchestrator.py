@@ -14,11 +14,16 @@ class PayrollServiceOrchestrator:
     async def orchestrate_payroll_service_processing(self, request: ProcessRequest) -> ProcessResponse:
         started_at = datetime.now(timezone.utc)
 
+        metadata = dict(request.metadata or {})
+        if request.check_date:
+            metadata.setdefault("asof", request.check_date)
+
         initial_state = PayrollServiceGraphState(
             request_id=request.request_id,
             payperiod_id=request.payperiod_id,
-            metadata=request.metadata,
+            metadata=metadata,
             status=None,
+            payperiod_status_by_event_time=None,
             result=None,
         )
 
@@ -31,11 +36,17 @@ class PayrollServiceOrchestrator:
 
         _ = datetime.now(timezone.utc) - started_at
 
+        payperiod_status = None
+        payroll_status_by_submit_time = None
+        if request.payperiod_id:
+            payperiod_status = final_state.status
+        else:
+            payroll_status_by_submit_time = final_state.payperiod_status_by_event_time
+
         return ProcessResponse(
             request_id=request.request_id,
-            status="completed",
-            payperiod_status=final_state.status,
-            result=final_state.result or "No result generated.",
+            payperiod_status=payperiod_status,
+            payroll_status_by_submit_time=payroll_status_by_submit_time,
         )
 
 

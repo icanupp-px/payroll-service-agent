@@ -8,8 +8,9 @@ WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY app/ /app/app/
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e .
+RUN printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf && \
+    pip install --no-cache-dir --upgrade pip --retries 20 --timeout 60 && \
+    pip install --no-cache-dir --retries 20 --timeout 60 -e . "langgraph-cli[inmem]"
 
 EXPOSE 8000
 

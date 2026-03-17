@@ -3,8 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.local
+      network: payroll_dns_net
     ports:
       - "8000:8000"
+    networks:
+      - payroll_dns_net
     env_file:
       - .env
     volumes:
@@ -16,16 +19,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.local
+      network: payroll_dns_net
     ports:
       - "2024:2024"
+    networks:
+      - payroll_dns_net
     env_file:
       - .env
     volumes:
       - .:/app
     restart: on-failure
-    command:
-      [
-        "sh",
-        "-c",
-        "pip install --no-cache-dir 'langgraph-cli[inmem]' && langgraph dev --host 0.0.0.0 --port 2024 --allow-blocking"
-      ]
+    command: ["langgraph", "dev", "--host", "0.0.0.0", "--port", "2024", "--allow-blocking"]
+
+networks:
+  payroll_dns_net:
+    external: true
