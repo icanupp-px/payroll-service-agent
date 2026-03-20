@@ -5,6 +5,7 @@ from app.api.models.input import ProcessRequest, ProcessResponse
 from app.payroll_service_agent.graph.graph_builder import build_graph
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
 
+
 class PayrollServiceOrchestrator:
 
     def __init__(self) -> None:
@@ -19,7 +20,6 @@ class PayrollServiceOrchestrator:
             payperiod_id=request.payperiod_id,
             metadata=request.metadata,
             status=None,
-            result=None,
         )
 
         graph_output = await asyncio.to_thread(self.graph.invoke, initial_state)
@@ -31,11 +31,15 @@ class PayrollServiceOrchestrator:
 
         _ = datetime.now(timezone.utc) - started_at
 
+        # Extract holds for top-level field, similar to payperiod_status
+        payperiod_holds = None
+        if hasattr(final_state, "holds"):
+            payperiod_holds = final_state.holds
         return ProcessResponse(
             request_id=request.request_id,
             status="completed",
             payperiod_status=final_state.status,
-            result=final_state.result or "No result generated.",
+            payperiod_holds=payperiod_holds,
         )
 
 
