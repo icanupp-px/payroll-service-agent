@@ -368,7 +368,9 @@ def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
 
 def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     log.info("Fetching payroll holds")
-    if not state.payperiod_id:
+    metadata = state.metadata or {}
+    payperiod_id = getattr(state, "payperiod_id", None) or metadata.get("payperiod_id")
+    if not payperiod_id:
         log.warning("No payperiod_id provided; skipping holds fetch.")
         return state
 
@@ -377,7 +379,6 @@ def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
         state.holds = None
         return state
 
-    metadata = state.metadata or {}
     holds_consumer = (
         metadata.get("x-payx-cnsmr")
         or metadata.get("x_payx_cnsmr")
@@ -404,7 +405,7 @@ def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     query = {k: v for k, v in query.items() if v is not None}
     url = (
         settings.payroll_holds_api_base_url.rstrip("/")
-        + f"/{state.payperiod_id}?"
+        + f"/{payperiod_id}?"
         + urlencode(query)
     )
     log.info(f"Payroll holds API URL: {url}")
