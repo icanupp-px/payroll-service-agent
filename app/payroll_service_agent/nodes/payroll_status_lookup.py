@@ -87,9 +87,13 @@ def _fetch_crossapp_mapping_payload(
 
 def _extract_first_ca_client_account(payload: object) -> str | None:
     if isinstance(payload, dict):
-        value = payload.get("caClientAcctNbr")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+        for key, value in payload.items():
+            normalized_key = str(key).strip().lower()
+            if normalized_key == "caclientacctnbr":
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    return str(value).strip()
         for nested in payload.values():
             found = _extract_first_ca_client_account(nested)
             if found:
@@ -106,30 +110,38 @@ def _extract_ca_client_account_via_llm(
     ent_client_account: str,
     crossapp_payload: object,
 ) -> str | None:
+    deterministic_value = _extract_first_ca_client_account(crossapp_payload)
     if not os.getenv("OPENAI_API_KEY"):
-        return _extract_first_ca_client_account(crossapp_payload)
+        return deterministic_value
 
     model_name = os.getenv("CHATBOT_CURRENT_PAYROLL_MODEL", "gpt-4o-mini")
     llm = ChatOpenAI(model=model_name, temperature=0)
     structured_llm = llm.with_structured_output(CrossAppMappingSelection)
-    response = structured_llm.invoke(
-        [
-            (
-                "system",
-                "You extract a valid CA client account number from a cross-app mappings API response. "
-                "Return only ca_client_acct_nbr in format CA:<alphanumeric>. "
-                "If there is no valid value, return null.",
-            ),
-            (
-                "human",
-                "ENT client account from prompt: "
-                f"{ent_client_account}\n\n"
-                "Cross-app mappings payload JSON:\n"
-                f"{json.dumps(crossapp_payload)}",
-            ),
-        ]
-    )
-    return response.ca_client_acct_nbr if response else None
+    try:
+        response = structured_llm.invoke(
+            [
+                (
+                    "system",
+                    "You extract a valid CA client account number from a cross-app mappings API response. "
+                    "Return only ca_client_acct_nbr in format CA:<alphanumeric>. "
+                    "If there is no valid value, return null.",
+                ),
+                (
+                    "human",
+                    "ENT client account from prompt: "
+                    f"{ent_client_account}\n\n"
+                    "Cross-app mappings payload JSON:\n"
+                    f"{json.dumps(crossapp_payload)}",
+                ),
+            ]
+        )
+        if response and isinstance(response.ca_client_acct_nbr, str) and response.ca_client_acct_nbr.strip():
+            return response.ca_client_acct_nbr
+    except Exception:
+        pass
+
+    # LLM is assistive; deterministic extraction remains the source of truth fallback.
+    return deterministic_value
 
 
 def _normalize_ca_client_account(value: str) -> str | None:

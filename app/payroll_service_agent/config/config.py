@@ -25,6 +25,35 @@ class Settings(BaseSettings):
     payroll_status_api_verify_ssl: bool = True
     payroll_status_api_ca_bundle_path: str | None = None
 
+    crossapp_mappings_api_url: str = Field(
+        default="https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings",
+        validation_alias=AliasChoices(
+            "CROSSAPP_MAPPINGS_API_URL",
+            "crossapp_mappings_api_url",
+        ),
+    )
+    crossapp_mappings_api_timeout_s: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices(
+            "CROSSAPP_MAPPINGS_API_TIMEOUT_S",
+            "crossapp_mappings_api_timeout_s",
+        ),
+    )
+    crossapp_mappings_api_verify_ssl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "CROSSAPP_MAPPINGS_API_VERIFY_SSL",
+            "crossapp_mappings_api_verify_ssl",
+        ),
+    )
+    crossapp_mappings_api_ca_bundle_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "CROSSAPP_MAPPINGS_API_CA_BUNDLE_PATH",
+            "crossapp_mappings_api_ca_bundle_path",
+        ),
+    )
+
     @classmethod
     def settings_customise_sources(
         cls,

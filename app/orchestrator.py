@@ -51,8 +51,6 @@ class PayrollServiceOrchestrator:
             request_id=request.request_id,
             payperiod_status=payperiod_status,
             payroll_status_by_submit_time=payroll_status_by_submit_time,
-            status="completed",
-            payperiod_status=final_state.status,
             payperiod_holds=payperiod_holds,
         )
 
