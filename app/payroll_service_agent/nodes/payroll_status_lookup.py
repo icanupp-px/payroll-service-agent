@@ -118,6 +118,11 @@ def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
 
 def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     log.info("Fetching payroll holds")
+    # Only call holds endpoint if status is 'Released'
+    if state.status != "Released":
+        log.info("Skipping holds fetch: payperiod_status is not 'Released'.")
+        return state
+
     if not state.payperiod_id:
         log.warning("No payperiod_id provided; skipping holds fetch.")
         return state
