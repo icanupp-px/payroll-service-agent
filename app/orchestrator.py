@@ -5,6 +5,7 @@ from app.api.models.input import ProcessRequest, ProcessResponse
 from app.payroll_service_agent.graph.graph_builder import build_graph
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
 
+
 class PayrollServiceOrchestrator:
 
     def __init__(self) -> None:
@@ -36,6 +37,10 @@ class PayrollServiceOrchestrator:
 
         _ = datetime.now(timezone.utc) - started_at
 
+        # Extract holds for top-level field, similar to payperiod_status
+        payperiod_holds = None
+        if hasattr(final_state, "holds"):
+            payperiod_holds = final_state.holds
         payperiod_status = None
         payroll_status_by_submit_time = None
         payroll_status_by_submit_time = final_state.payperiod_status_by_event_time
@@ -46,6 +51,9 @@ class PayrollServiceOrchestrator:
             request_id=request.request_id,
             payperiod_status=payperiod_status,
             payroll_status_by_submit_time=payroll_status_by_submit_time,
+            status="completed",
+            payperiod_status=final_state.status,
+            payperiod_holds=payperiod_holds,
         )
 
 

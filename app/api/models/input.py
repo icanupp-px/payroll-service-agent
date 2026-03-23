@@ -23,3 +23,4 @@ class ProcessResponse(BaseModel):
         default=None,
         serialization_alias="payrollStatusBySubmitTime",
     )
+    payperiod_holds: list | None = None
