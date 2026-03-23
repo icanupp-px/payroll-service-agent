@@ -29,7 +29,11 @@ app/
 │   │   ├── payroll_status_lookup.py      # Structured outputs for lookup graph
 │   │
 │   ├── nodes/                            # LangGraph-compatible node functions (SubGraphs)
-│   │   ├── payroll_status_lookup.py      # TKTKTKTKTK
+│   │   ├── check_date_flow.py            # Check-date status flow node
+│   │   ├── current_payroll_flow.py       # Current-payroll status flow node
+│   │   ├── holds_flow.py                 # Optional payroll holds flow node
+│   │   ├── core_nodes.py                 # Router and composer nodes
+│   │   ├── payroll_status_lookup.py      # Shared payroll payload/account-resolution helpers
 │   │   └── utils/                        # Shared helpers for nodes (internal)
 │   │
 │   ├── prompts/                          # YAML-based prompt templates used by each node
@@ -42,6 +46,7 @@ app/
 
 ### 📌 Notes:
 - **LangGraph** handles the node orchestration and state transitions.
+- Status flows are segregated and routed centrally through conditional edges.
 - Each node uses its own **structured prompt**, stored in YAML and loaded dynamically.
 - The agent is built for **clean separation of reasoning, validation, and submission logic**.
 
@@ -100,7 +105,10 @@ app/
 - The service calls:
     - `https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings?userguid=<...>&cltacctnbrs=<ENT...>`
     - Header: `x-payx-cnsmr: CA DOMAIN` (or your environment-specific consumer value)
-- The response field `content.crossappmappings[].caClientAcctNbr` is extracted (via LLM-assisted parsing), normalized, and assigned to `cltacctnbrs` for downstream payperiod API calls.
+- The response field `content.crossappmappings[].caClientAcctNbr` is extracted with deterministic parsing first, optionally assisted by LLM, then normalized and assigned to `cltacctnbrs` for downstream payperiod API calls.
+- `caClientAcctNbr` values can be string or numeric; numeric values are accepted and normalized.
+- If `CROSSAPP_MAPPINGS_API_URL` is not set, the service defaults to:
+    - `https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings`
 - If ENT is missing in prompt, or no valid `caClientAcctNbr` is found, the response is:
     - `Please send a valid Client Account number`
 
@@ -131,7 +139,6 @@ app/
         {
             "request_id": "req-12346",
             "payrollStatusBySubmitTime": {
-                "2025-03-31T10:11:12Z": "Initial",
                 "2025-03-31T12:30:00Z": "Completed by MEC"
             }
         }
@@ -183,4 +190,5 @@ Chatbot supports:
 Prompt examples:
 
 - "status for ENT:008WQ28JLJR1C7M97QIQ check date 2025-03-31"
+- "status for ENT:008WQ28JLJR1C7M97QIQ check date2025-03-31"
 - "what is my current payroll status for ENT:008WQ28JLJR1C7M97QIQ"

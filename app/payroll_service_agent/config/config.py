@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     payroll_status_api_verify_ssl: bool = True
     payroll_status_api_ca_bundle_path: str | None = None
 
+    payroll_holds_api_base_url: str = ""
+    payroll_holds_api_timeout_s: float = 10.0
+    payroll_holds_api_key: str | None = None
+    payroll_holds_api_consumer: str | None = None
+    payroll_holds_api_x_payx_cnsmr: str | None = None
+    payroll_holds_api_verify_ssl: bool = True
+    payroll_holds_api_ca_bundle_path: str | None = None
+
     crossapp_mappings_api_url: str = Field(
         default="https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings",
         validation_alias=AliasChoices(

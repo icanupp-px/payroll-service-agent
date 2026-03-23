@@ -18,10 +18,13 @@ class PayrollServiceOrchestrator:
         metadata = dict(request.metadata or {})
         if request.check_date:
             metadata.setdefault("asof", request.check_date)
+        flow_type = (request.flow_type or metadata.get("flow_type") or "check_date").strip().lower()
+        metadata.setdefault("flow_type", flow_type)
 
         initial_state = PayrollServiceGraphState(
             request_id=request.request_id,
             prompt=request.prompt,
+            flow_type=flow_type,
             metadata=metadata,
             status=None,
             payperiod_status_by_event_time=None,
@@ -50,6 +53,7 @@ class PayrollServiceOrchestrator:
         return ProcessResponse(
             request_id=request.request_id,
             payperiod_status=payperiod_status,
+            resolved_check_date=(final_state.metadata or {}).get("asof"),
             payroll_status_by_submit_time=payroll_status_by_submit_time,
             payperiod_holds=payperiod_holds,
         )

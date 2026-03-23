@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from app.payroll_service_agent.config.config import settings
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
 from app.payroll_service_agent.utils.logging_utils import setup_logger
-from app.payroll_service_agent.utils.payroll_status_lookup_utils import PayrollStatusLookupUtils
 
 
 log = setup_logger(__name__)
@@ -209,9 +208,11 @@ def _resolve_ca_client_account_number(
 
 
 
-def request_router(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    log.info("Routing request")
-    return state
+def request_router(state):
+    # Compatibility wrapper: implementation lives in core_nodes.py.
+    from app.payroll_service_agent.nodes.core_nodes import request_router as _impl
+
+    return _impl(state)
 
 
 def _default_current_checkdate_asof() -> str:
@@ -287,78 +288,10 @@ def fetch_payperiods_payload(
 
 
 def fetch_status_by_check_date(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    log.info("Fetching payroll statuses by check date")
+    # Compatibility wrapper: delegated implementation now lives in check_date_flow.py.
+    from app.payroll_service_agent.nodes.check_date_flow import fetch_status_by_check_date as _impl
 
-    metadata = state.metadata or {}
-    requested_check_date = metadata.get("asof") or metadata.get("checkDate")
-    if not requested_check_date:
-        log.error(
-            "Missing required check date for payperiod list call. "
-            "Set metadata.asof (or metadata.checkDate)."
-        )
-        state.status = "error"
-        return state
-
-    try:
-        payload = fetch_payperiods_payload(
-            metadata,
-            requested_check_date=requested_check_date,
-            prompt=state.prompt,
-        )
-        status_by_event_time = (
-            PayrollStatusLookupUtils.extract_payperiod_status_map_by_event_time_and_check_date(
-                payload, requested_check_date
-            )
-        )
-        status_by_event_time = {
-            k: v for k, v in status_by_event_time.items() if _is_allowed_status(v)
-        }
-        if status_by_event_time:
-            state.payperiod_status_by_event_time = status_by_event_time
-        else:
-            # Some upstream responses do not include event time fields.
-            # Fallback to an available status map so the caller still gets useful output.
-            state.payperiod_status_by_event_time = (
-                PayrollStatusLookupUtils.extract_payperiod_status_map_by_check_date(
-                    payload, requested_check_date
-                )
-            )
-            state.payperiod_status_by_event_time = {
-                k: v
-                for k, v in state.payperiod_status_by_event_time.items()
-                if _is_allowed_status(v)
-            }
-        statuses = PayrollStatusLookupUtils.extract_payperiod_statuses_by_check_date(
-            payload, requested_check_date
-        )
-        statuses = [status for status in statuses if _is_allowed_status(status)]
-        state.status = ", ".join(statuses) if statuses else "unknown"
-    except ValueError as e:
-        log.error(f"Payperiod list API call skipped: {e}")
-        if str(e) == INVALID_CLIENT_ACCOUNT_MESSAGE:
-            state.status = INVALID_CLIENT_ACCOUNT_MESSAGE
-            state.result = INVALID_CLIENT_ACCOUNT_MESSAGE
-        else:
-            state.status = "error"
-    except HTTPError as e:
-        response_body = ""
-        try:
-            raw_body = e.read()
-            response_body = raw_body.decode(
-                "utf-8", errors="replace") if raw_body else ""
-        except Exception:
-            response_body = ""
-
-        log.error(
-            "Payperiod list API call failed: "
-            f"HTTP {e.code}. Response body: {response_body}"
-        )
-        state.status = "error"
-    except (URLError, TimeoutError, json.JSONDecodeError) as e:
-        log.error(f"Payperiod list API call failed: {e}")
-        state.status = "error"
-
-    return state
+    return _impl(state)
 
 
 def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
@@ -366,115 +299,15 @@ def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     return fetch_status_by_check_date(state)
 
 
-def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    log.info("Fetching payroll holds")
-    metadata = state.metadata or {}
-    payperiod_id = getattr(state, "payperiod_id", None) or metadata.get("payperiod_id")
-    if not payperiod_id:
-        log.warning("No payperiod_id provided; skipping holds fetch.")
-        return state
+def fetch_holds(state):
+    # Compatibility wrapper: implementation lives in holds_flow.py.
+    from app.payroll_service_agent.nodes.holds_flow import fetch_holds as _impl
 
-    if not settings.payroll_holds_api_base_url:
-        log.warning("PAYROLL_HOLDS_API_BASE_URL not set; skipping REST call")
-        state.holds = None
-        return state
-
-    holds_consumer = (
-        metadata.get("x-payx-cnsmr")
-        or metadata.get("x_payx_cnsmr")
-        or metadata.get("consumer")
-        or metadata.get("x-consumer")
-        or metadata.get("source")
-        or settings.payroll_holds_api_x_payx_cnsmr
-        or settings.payroll_holds_api_consumer
-    )
-    if not holds_consumer:
-        log.error(
-            "Missing required x-payx-cnsmr value for payroll holds call. "
-            "Set metadata.x-payx-cnsmr or PAYROLL_HOLDS_API_X_PAYX_CNSMR."
-        )
-        state.holds = None
-        return state
-
-    # If consumer is present, proceed with API call as in fetch_status
-
-    query = {
-        "userguid": metadata.get("userguid"),
-        "cltacctnbrs": metadata.get("cltacctnbrs"),
-    }
-    query = {k: v for k, v in query.items() if v is not None}
-    url = (
-        settings.payroll_holds_api_base_url.rstrip("/")
-        + f"/{payperiod_id}?"
-        + urlencode(query)
-    )
-    log.info(f"Payroll holds API URL: {url}")
-
-    headers = {
-        "Accept": "application/json",
-        "x-payx-cnsmr": holds_consumer,
-    }
-    if settings.payroll_holds_api_key:
-        headers["Authorization"] = f"Bearer {settings.payroll_holds_api_key}"
-
-    log.info(f"Payroll holds API request headers: {headers}")
-
-    req = Request(url, headers=headers, method="GET")
-
-    ssl_ctx = None
-    if hasattr(settings, "payroll_holds_api_ca_bundle_path") and getattr(settings, "payroll_holds_api_ca_bundle_path", None):
-        ssl_ctx = ssl.create_default_context(
-            cafile=settings.payroll_holds_api_ca_bundle_path)
-    elif not getattr(settings, "payroll_holds_api_verify_ssl", True):
-        ssl_ctx = ssl._create_unverified_context()
-
-    try:
-        log.info(f"Making payroll holds API request: url={url}, headers={headers}")
-        with urlopen(req, timeout=settings.payroll_holds_api_timeout_s, context=ssl_ctx) as resp:
-            log.info(
-                f"Payroll holds API response object: status={getattr(resp, 'status', None)}, headers={dict(resp.headers)}")
-            resp_body = resp.read().decode("utf-8")
-            log.info(f"Payroll holds API raw response: {resp_body}")
-            data = json.loads(resp_body)
-            # Extract only the relevant fields from the holds API response
-            holds = []
-            content = data.get("content") if isinstance(data, dict) else None
-            client_payroll_holds = content.get(
-                "clientPayrollHolds") if content and isinstance(content, dict) else None
-            if client_payroll_holds and isinstance(client_payroll_holds, list):
-                for hold in client_payroll_holds:
-                    if not isinstance(hold, dict):
-                        continue
-                    filtered = {
-                        "systemHoldType": hold.get("systemHoldType"),
-                        "clientPayrollHoldId": hold.get("clientPayrollHoldId"),
-                        "payPeriodId": hold.get("payPeriodId"),
-                        "active": hold.get("active"),
-                    }
-                    holds.append(filtered)
-            state.holds = holds if holds else None
-            log.info(
-                f"Fetched {len(state.holds) if state.holds else 0} holds.")
-    except HTTPError as e:
-        response_body = ""
-        try:
-            raw_body = e.read()
-            response_body = raw_body.decode(
-                "utf-8", errors="replace") if raw_body else ""
-        except Exception:
-            response_body = ""
-        log.error(
-            f"Payroll holds API call failed: HTTP {e.code} for {url}. Response body: {response_body}")
-        state.holds = None
-    except (URLError, TimeoutError, json.JSONDecodeError) as e:
-        log.error(f"Payroll holds API call failed: {e}")
-        state.holds = None
-    return state
+    return _impl(state)
 
 
-def compose_result(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    log.info("Composing result")
-    if not state.result:
-        state.result = f"Hello, world! {state.request_id}"
-    # No longer set state.result
-    return state
+def compose_result(state):
+    # Compatibility wrapper: implementation lives in core_nodes.py.
+    from app.payroll_service_agent.nodes.core_nodes import compose_result as _impl
+
+    return _impl(state)
