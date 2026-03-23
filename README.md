@@ -70,8 +70,7 @@ app/
     uv venv
     source .venv/bin/activate  # On Unix/macOS
     # or
-    .venv\Scripts\activate  # On Windows
-     source .venv/Scripts/activate
+    .venv\Scripts\Activate.ps1  # On Windows PowerShell
     ```
 
 3. Install dependencies:
@@ -79,6 +78,31 @@ app/
     uv pip install -e .
     ```
 4. **Ensure your `.env` is in place**
+
+### Client Account Resolution (ENT -> CA)
+
+- The workflow now resolves client account number indirectly.
+- Supported input modes are:
+    - Check-date flow
+    - Current-payroll flow
+- payperiod_id-based input is not part of the user/API workflow.
+- Provide the ENT client account number in the request prompt (for example: `ENT:008WQ28JLJR1C7M97QIQ`).
+- No metadata input is required from chatbot users.
+- Internal defaults used by the service:
+    - `userguid`: `CA:12345`
+    - `projection`: `payperiod`
+    - `page`: `0`
+    - `x-payx-cnsmr`: `CA DOMAIN`
+- Additional payperiod request rule:
+    - If prompt contains a check date, `checkdateasof` is set to that date.
+    - For current-payroll prompts, `checkdateasof` is set to system date minus 30 days (UTC).
+- `Entry` and `Initial` payroll statuses are omitted from this flow.
+- The service calls:
+    - `https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings?userguid=<...>&cltacctnbrs=<ENT...>`
+    - Header: `x-payx-cnsmr: CA DOMAIN` (or your environment-specific consumer value)
+- The response field `content.crossappmappings[].caClientAcctNbr` is extracted (via LLM-assisted parsing), normalized, and assigned to `cltacctnbrs` for downstream payperiod API calls.
+- If ENT is missing in prompt, or no valid `caClientAcctNbr` is found, the response is:
+    - `Please send a valid Client Account number`
 
 5. **Stop any previously running container and delete volumes**
    ```bash
@@ -92,40 +116,15 @@ app/
    ```
 7. **Access the services:**
    * POST: http://localhost:8000/api/v1/process
+    * Supported POST workflow: check_date-based request
     * LangGraph Playground API: http://localhost:2024
     * LangGraph Studio: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
-        * Sample Request/Response - Flow 1 (by payperiod_id):
-        ```json
-        {
-            "request_id": "req-12345",
-            "payperiod_id": "970008620616670",
-            "metadata": {
-                "userguid": "CA:751234564482",
-                "cltacctnbrs": "CA:70309024",
-                "projection": "payperiod",
-                "x-payx-cnsmr": "CA DOMAIN"
-            }
-        }
-        ```
-        ```json
-        {
-            "request_id": "req-12345",
-            "payperiod_status": "Entry",
-        }
-        ```
-
-        * Sample Request/Response - Flow 2 (by check_date):
+        * Sample Request/Response - Flow (by check_date):
         ```json
         {
             "request_id": "req-12346",
-            "check_date": "2025-03-31",
-            "metadata": {
-                "userguid": "CA:751234564482",
-                "cltacctnbrs": "CA:70309024",
-                "projection": "payperiod",
-                "page": "1",
-                "x-payx-cnsmr": "CA DOMAIN"
-            }
+            "prompt": "status for ENT:008WQ28JLJR1C7M97QIQ check date 2025-03-31",
+            "check_date": "2025-03-31"
         }
         ```
         ```json
@@ -141,3 +140,47 @@ app/
 ## LangGraph Playground
 
 - Local setup and Studio connection steps: [docs/langgraph_playground.md](docs/langgraph_playground.md)
+
+## Local Chatbot UI (No New API Endpoint)
+
+If you want a chatbot in the browser without creating a separate chatbot endpoint, run the local Streamlit UI. It calls the orchestrator directly in-process.
+
+Chatbot supports:
+
+- Check-date prompts
+- Current-payroll prompts
+
+1. Create a virtual environment (first time only):
+
+    ```bash
+    uv venv
+    ```
+
+2. Activate the virtual environment:
+
+    ```bash
+    source .venv/bin/activate  # Unix/macOS
+    # or
+    .venv\Scripts\Activate.ps1  # Windows PowerShell
+    ```
+
+3. Install dependencies:
+
+    ```bash
+    uv pip install -e .
+    ```
+
+4. Start the chatbot UI:
+
+    ```bash
+    streamlit run app/chatbot_local.py --server.port 8501
+    ```
+
+5. Open in Chrome:
+
+    - http://localhost:8501
+
+Prompt examples:
+
+- "status for ENT:008WQ28JLJR1C7M97QIQ check date 2025-03-31"
+- "what is my current payroll status for ENT:008WQ28JLJR1C7M97QIQ"

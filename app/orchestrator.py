@@ -20,7 +20,7 @@ class PayrollServiceOrchestrator:
 
         initial_state = PayrollServiceGraphState(
             request_id=request.request_id,
-            payperiod_id=request.payperiod_id,
+            prompt=request.prompt,
             metadata=metadata,
             status=None,
             payperiod_status_by_event_time=None,
@@ -38,10 +38,9 @@ class PayrollServiceOrchestrator:
 
         payperiod_status = None
         payroll_status_by_submit_time = None
-        if request.payperiod_id:
+        payroll_status_by_submit_time = final_state.payperiod_status_by_event_time
+        if not payroll_status_by_submit_time and final_state.status:
             payperiod_status = final_state.status
-        else:
-            payroll_status_by_submit_time = final_state.payperiod_status_by_event_time
 
         return ProcessResponse(
             request_id=request.request_id,
