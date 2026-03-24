@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import streamlit as st
+import logging
 
 from app.api.models.input import ProcessRequest
 from app.orchestrator import orchestrator
@@ -69,9 +70,12 @@ def parse_prompt(prompt: str) -> tuple[str | None, bool]:
     elif check_date_match:
         check_date = check_date_match.group(0)
 
-    has_check_date_phrase = bool(re.search(r"\bcheck\s*date\b", prompt_text, re.IGNORECASE))
-    has_explicit_current_phrase = bool(CURRENT_PAYROLL_PATTERN.search(prompt or ""))
-    has_payroll_intent = bool(PAYROLL_STATUS_INTENT_PATTERN.search(prompt or ""))
+    has_check_date_phrase = bool(
+        re.search(r"\bcheck\s*date\b", prompt_text, re.IGNORECASE))
+    has_explicit_current_phrase = bool(
+        CURRENT_PAYROLL_PATTERN.search(prompt or ""))
+    has_payroll_intent = bool(
+        PAYROLL_STATUS_INTENT_PATTERN.search(prompt or ""))
     is_current_payroll_prompt = bool(
         not check_date
         and not has_check_date_phrase
@@ -82,7 +86,8 @@ def parse_prompt(prompt: str) -> tuple[str | None, bool]:
 
 
 def format_answer(response, check_date: str | None = None) -> str:
-    effective_check_date = check_date or getattr(response, "resolved_check_date", None)
+    effective_check_date = check_date or getattr(
+        response, "resolved_check_date", None)
     if response.payperiod_status:
         if response.payperiod_status == INVALID_CLIENT_ACCOUNT_MESSAGE:
             return INVALID_CLIENT_ACCOUNT_MESSAGE
@@ -126,7 +131,8 @@ def process_prompt(
 
     flow_type = "check_date"
     if is_current_payroll_prompt:
-        metadata["checkdateasof"] = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+        metadata["checkdateasof"] = (datetime.now(
+            timezone.utc) - timedelta(days=30)).date().isoformat()
         flow_type = "current_payroll"
 
     if flow_type != "current_payroll" and not check_date:
@@ -148,19 +154,28 @@ def process_prompt(
     )
 
     with st.spinner("Fetching payroll status..."):
-        response = asyncio.run(orchestrator.orchestrate_payroll_service_processing(request))
+        response = asyncio.run(
+            orchestrator.orchestrate_payroll_service_processing(request))
 
     formatted_response = format_answer(response, check_date=check_date)
     return formatted_response, True
 
 
 def main() -> None:
-    st.set_page_config(page_title="Payroll Status Agent", page_icon="💬", layout="centered")
+    # Set up root logger to ensure all logs are visible in Streamlit
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    st.set_page_config(page_title="Payroll Status Agent",
+                       page_icon="💬", layout="centered")
     with st.spinner("Running test suite before starting the chatbot..."):
         tests_passed, test_output = run_startup_test_suite()
 
     if not tests_passed:
-        st.error("Startup test suite failed. Fix the failing tests before using the chatbot.")
+        st.error(
+            "Startup test suite failed. Fix the failing tests before using the chatbot.")
         st.code(test_output)
         st.stop()
     st.markdown(
@@ -189,7 +204,8 @@ def main() -> None:
     if "last_response" not in st.session_state:
         st.session_state.last_response = ""
 
-    prompt = st.text_area("Prompt", placeholder="What is the status for check date 2025-03-31?")
+    prompt = st.text_area(
+        "Prompt", placeholder="What is the status for check date 2025-03-31?")
 
     if st.button("Get status", type="primary"):
         try:
