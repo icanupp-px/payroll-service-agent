@@ -21,19 +21,15 @@ app/
 │   │   ├── config.py                     # Loads config values from .env or YAML
 │   │
 │   ├── graph/                            # LangGraph graph builder and shared state definitions
-│   │   ├── graph_builder.py              # Wires up LangGraph nodes and edges
+│   │   ├── graph_builder.py              # Wires the top-level graph and hands off to subgraphs
 │   │   └── states/                       # Pydantic models for the subgraphs
 │   │       ├── payroll_status_lookup.py  # State for lookup subgraph
 │   │
 │   ├── models/                           # LLM output schemas used for structured parsing
 │   │   ├── payroll_status_lookup.py      # Structured outputs for lookup graph
 │   │
-│   ├── nodes/                            # LangGraph-compatible node functions (SubGraphs)
-│   │   ├── check_date_flow.py            # Check-date status flow node
-│   │   ├── current_payroll_flow.py       # Current-payroll status flow node
-│   │   ├── holds_flow.py                 # Optional payroll holds flow node
-│   │   ├── core_nodes.py                 # Router and composer nodes
-│   │   ├── payroll_status_lookup.py      # Shared payroll payload/account-resolution helpers
+│   ├── nodes/                            # LangGraph-compatible node functions and subgraph builders
+│   │   ├── payroll_status_lookup.py      # Payroll-status subgraph, branching logic, and shared helpers
 │   │   └── utils/                        # Shared helpers for nodes (internal)
 │   │
 │   ├── prompts/                          # YAML-based prompt templates used by each node
@@ -46,7 +42,8 @@ app/
 
 ### 📌 Notes:
 - **LangGraph** handles the node orchestration and state transitions.
-- Status flows are segregated and routed centrally through conditional edges.
+- The top-level graph routes once into the `payroll_status_lookup` subgraph.
+- Check-date, current-payroll, holds, and result composition branch internally within that subgraph.
 - Each node uses its own **structured prompt**, stored in YAML and loaded dynamically.
 - The agent is built for **clean separation of reasoning, validation, and submission logic**.
 
@@ -177,13 +174,27 @@ Chatbot supports:
     uv pip install -e .
     ```
 
-4. Start the chatbot UI:
+4. Build the project artifacts:
+
+    ```bash
+    uv build
+    ```
+
+   This produces:
+
+    - `dist/payroll_service_agent-0.1.0.tar.gz`
+    - `dist/payroll_service_agent-0.1.0-py3-none-any.whl`
+
+5. Start the chatbot UI:
 
     ```bash
     streamlit run app/chatbot_local.py --server.port 8501
     ```
 
-5. Open in Chrome:
+   On startup, the Streamlit app runs the full `tests/` pytest suite through `uv` once before the UI becomes available.
+   If the suite fails, the chatbot page stops and shows the test output.
+
+6. Open in Chrome:
 
     - http://localhost:8501
 

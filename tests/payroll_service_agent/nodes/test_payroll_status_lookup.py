@@ -25,7 +25,11 @@ def test_fetch_status_by_check_date_sets_status_map(monkeypatch) -> None:
         }
     }
 
-    monkeypatch.setattr(node, "fetch_payperiods_payload", lambda *args, **kwargs: payload)
+    monkeypatch.setattr(
+        node.PayrollApiUtils,
+        "fetch_payperiods_payload",
+        lambda *args, **kwargs: payload,
+    )
 
     state = PayrollServiceGraphState(
         request_id="req-1",
@@ -39,9 +43,8 @@ def test_fetch_status_by_check_date_sets_status_map(monkeypatch) -> None:
 
     updated = node.fetch_status_by_check_date(state)
 
-    assert updated.status == "Initial, Completed by MEC"
+    assert updated.status == "Completed by MEC"
     assert updated.payperiod_status_by_event_time == {
-        "2025-03-31T10:11:12Z": "Initial",
         "2025-03-31T12:30:00Z": "Completed by MEC",
     }
 
@@ -56,7 +59,11 @@ def test_fetch_status_by_check_date_sets_error_when_mocked_api_http_error(monkey
             fp=io.BytesIO(b'{"error":"upstream failure"}'),
         )
 
-    monkeypatch.setattr(node, "fetch_payperiods_payload", mock_fetch_payperiods_payload)
+    monkeypatch.setattr(
+        node.PayrollApiUtils,
+        "fetch_payperiods_payload",
+        mock_fetch_payperiods_payload,
+    )
 
     state = PayrollServiceGraphState(
         request_id="req-2",
@@ -71,3 +78,22 @@ def test_fetch_status_by_check_date_sets_error_when_mocked_api_http_error(monkey
     updated = node.fetch_status_by_check_date(state)
 
     assert updated.status == "error"
+
+
+def test_select_payroll_status_branch_prefers_current_payroll_flow() -> None:
+    state = PayrollServiceGraphState(
+        request_id="req-3",
+        flow_type="current_payroll",
+        metadata={"asof": "2025-03-31"},
+    )
+
+    assert node._select_payroll_status_branch(state) == "fetch_status_by_current_payroll"
+
+
+def test_select_payroll_status_branch_uses_check_date_when_present() -> None:
+    state = PayrollServiceGraphState(
+        request_id="req-4",
+        metadata={"checkDate": "2025-03-31"},
+    )
+
+    assert node._select_payroll_status_branch(state) == "fetch_status_by_check_date"

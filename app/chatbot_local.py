@@ -1,7 +1,9 @@
 import asyncio
 import re
+import subprocess
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import streamlit as st
 
@@ -22,6 +24,38 @@ PAYROLL_STATUS_INTENT_PATTERN = re.compile(
     r"\b(payroll|pay ?period|status|check date)\b",
     re.IGNORECASE,
 )
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@st.cache_resource(show_spinner=False)
+def run_startup_test_suite() -> tuple[bool, str]:
+    command = [
+        "uv",
+        "run",
+        "--with",
+        "pytest",
+        "--with",
+        "pytest-asyncio",
+        "pytest",
+        "tests",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False, "Failed to start test suite: 'uv' was not found on PATH."
+
+    output = "\n".join(
+        part.strip()
+        for part in [completed.stdout, completed.stderr]
+        if part and part.strip()
+    )
+    return completed.returncode == 0, output or "No test output was produced."
 
 
 def parse_prompt(prompt: str) -> tuple[str | None, bool]:
@@ -121,7 +155,14 @@ def process_prompt(
 
 
 def main() -> None:
-    st.set_page_config(page_title="Payroll Status Chatbot", page_icon="💬", layout="centered")
+    st.set_page_config(page_title="Payroll Status Agent", page_icon="💬", layout="centered")
+    with st.spinner("Running test suite before starting the chatbot..."):
+        tests_passed, test_output = run_startup_test_suite()
+
+    if not tests_passed:
+        st.error("Startup test suite failed. Fix the failing tests before using the chatbot.")
+        st.code(test_output)
+        st.stop()
     st.markdown(
         """
         <style>
@@ -139,7 +180,7 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.title("Payroll Status Chatbot")
+    st.title("Payroll Status Agent")
     st.caption(
         "Ask in plain text, for example: 'status for check date 2025-03-31', "
         "'status for 2025-03-31', or 'What's the status of my current payroll?'."
