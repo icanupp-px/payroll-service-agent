@@ -1,81 +1,99 @@
 import io
-import json
 from urllib.error import HTTPError
 
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
 from app.payroll_service_agent.nodes import payroll_status_lookup as node
 
 
-class _MockResponse:
-    def __init__(self, payload: dict):
-        self._raw = json.dumps(payload).encode("utf-8")
-
-    def read(self) -> bytes:
-        return self._raw
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-def test_fetch_status_sets_status_from_mocked_api(monkeypatch) -> None:
-    monkeypatch.setattr(node.settings, "payroll_status_api_base_url", "https://example.test")
-    monkeypatch.setattr(node.settings, "payroll_status_api_timeout_s", 5.0)
-    monkeypatch.setattr(node.settings, "payroll_status_api_key", None)
-    monkeypatch.setattr(node.settings, "payroll_status_api_verify_ssl", True)
-    monkeypatch.setattr(node.settings, "payroll_status_api_ca_bundle_path", None)
-
+def test_fetch_status_by_check_date_sets_status_map(monkeypatch) -> None:
     payload = {
         "content": {
             "payPeriods": [
-                {"payPeriodId": "PP-123", "payPeriodStatusValue": "Completed"}
+                {
+                    "payPeriodId": "PP-1",
+                    "checkDate": "2025-03-31",
+                    "payPeriodStatusValue": "Initial",
+                    "payPeriodStatusEventTime": "2025-03-31T10:11:12Z",
+                },
+                {
+                    "payPeriodId": "PP-2",
+                    "checkDate": "2025-03-31",
+                    "payPeriodStatusValue": "Completed by MEC",
+                    "payPeriodStatusEventTime": "2025-03-31T12:30:00Z",
+                },
             ]
         }
     }
 
-    def mock_urlopen(req, timeout, context):
-        assert req.full_url.startswith("https://example.test/payperiods/PP-123?")
-        return _MockResponse(payload)
-
-    monkeypatch.setattr(node, "urlopen", mock_urlopen)
+    monkeypatch.setattr(
+        node.PayrollApiUtils,
+        "fetch_payperiods_payload",
+        lambda *args, **kwargs: payload,
+    )
 
     state = PayrollServiceGraphState(
         request_id="req-1",
-        payperiod_id="PP-123",
-        metadata={"x-payx-cnsmr": "unit-test-consumer", "userguid": "u-1", "cltacctnbrs": "c-1"},
+        metadata={
+            "x-payx-cnsmr": "unit-test-consumer",
+            "userguid": "u-1",
+            "cltacctnbrs": "ENT:ABC123",
+            "asof": "2025-03-31",
+        },
     )
 
-    updated = node.fetch_status(state)
+    updated = node.fetch_status_by_check_date(state)
 
-    assert updated.status == "Completed"
+    assert updated.status == "Completed by MEC"
+    assert updated.payperiod_status_by_event_time == {
+        "2025-03-31T12:30:00Z": "Completed by MEC",
+    }
 
 
-def test_fetch_status_sets_error_when_mocked_api_http_error(monkeypatch) -> None:
-    monkeypatch.setattr(node.settings, "payroll_status_api_base_url", "https://example.test")
-    monkeypatch.setattr(node.settings, "payroll_status_api_timeout_s", 5.0)
-    monkeypatch.setattr(node.settings, "payroll_status_api_key", None)
-    monkeypatch.setattr(node.settings, "payroll_status_api_verify_ssl", True)
-    monkeypatch.setattr(node.settings, "payroll_status_api_ca_bundle_path", None)
-
-    def mock_urlopen(req, timeout, context):
+def test_fetch_status_by_check_date_sets_error_when_mocked_api_http_error(monkeypatch) -> None:
+    def mock_fetch_payperiods_payload(*args, **kwargs):
         raise HTTPError(
-            url=req.full_url,
+            url="https://example.test/payperiods",
             code=500,
             msg="Internal Server Error",
             hdrs=None,
             fp=io.BytesIO(b'{"error":"upstream failure"}'),
         )
 
-    monkeypatch.setattr(node, "urlopen", mock_urlopen)
+    monkeypatch.setattr(
+        node.PayrollApiUtils,
+        "fetch_payperiods_payload",
+        mock_fetch_payperiods_payload,
+    )
 
     state = PayrollServiceGraphState(
         request_id="req-2",
-        payperiod_id="PP-500",
-        metadata={"x-payx-cnsmr": "unit-test-consumer", "userguid": "u-2", "cltacctnbrs": "c-2"},
+        metadata={
+            "x-payx-cnsmr": "unit-test-consumer",
+            "userguid": "u-2",
+            "cltacctnbrs": "ENT:XYZ789",
+            "asof": "2025-03-31",
+        },
     )
 
-    updated = node.fetch_status(state)
+    updated = node.fetch_status_by_check_date(state)
 
     assert updated.status == "error"
+
+
+def test_select_payroll_status_branch_prefers_current_payroll_flow() -> None:
+    state = PayrollServiceGraphState(
+        request_id="req-3",
+        flow_type="current_payroll",
+        metadata={"asof": "2025-03-31"},
+    )
+
+    assert node._select_payroll_status_branch(state) == "fetch_status_by_current_payroll"
+
+
+def test_select_payroll_status_branch_uses_check_date_when_present() -> None:
+    state = PayrollServiceGraphState(
+        request_id="req-4",
+        metadata={"checkDate": "2025-03-31"},
+    )
+
+    assert node._select_payroll_status_branch(state) == "fetch_status_by_check_date"
