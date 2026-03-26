@@ -12,6 +12,9 @@ from app.payroll_service_agent.utils.crossapp_mapping_utility import (
     INVALID_CLIENT_ACCOUNT_MESSAGE,
 )
 from app.payroll_service_agent.utils.llm_selection_utility import LlmSelectionUtility
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class CurrentPayrollSelection(BaseModel):
@@ -22,6 +25,58 @@ class CurrentPayrollSelection(BaseModel):
 
 
 class PayrollStatusLookupUtils:
+
+    @staticmethod
+    def fetch_all_payperiods(
+        metadata: dict[str, str] | None,
+        requested_check_date: str | None = None,
+        prompt: str | None = None,
+    ) -> list[dict]:
+        """
+        Fetches all pay periods by paginating through the payperiods endpoint.
+        Returns a combined list of all pay period dicts from all pages.
+        """
+        all_pay_periods = []
+        # Always start with page 0 to get totalPages from metadata
+        base_metadata = dict(metadata) if metadata else {}
+        base_metadata.pop("page", None)
+        # Fetch page 0
+        paged_metadata = dict(base_metadata)
+        paged_metadata["page"] = 0
+        payload = PayrollApiUtils.fetch_payperiods_payload(
+            paged_metadata,
+            requested_check_date=requested_check_date,
+            prompt=prompt,
+        )
+        content = payload.get("content", {})
+        pay_periods = content.get("payPeriods", [])
+        all_pay_periods.extend(pay_periods)
+        meta = payload.get("metadata", {})
+        pagination = meta.get("pagination", {})
+        total_pages = pagination.get("totalPages", 1)
+
+        # Loop through all remaining pages (if any), starting from 1 up to totalPages-1
+        for page in range(1, total_pages):
+            paged_metadata = dict(base_metadata)
+            paged_metadata["page"] = page
+            payload = PayrollApiUtils.fetch_payperiods_payload(
+                paged_metadata,
+                requested_check_date=requested_check_date,
+                prompt=prompt,
+            )
+            content = payload.get("content", {})
+            pay_periods = content.get("payPeriods", [])
+            all_pay_periods.extend(pay_periods)
+
+        total_elements = len(all_pay_periods)
+        log.info(f"fetch_all_payperiods: totalElements={total_elements}")
+        if all_pay_periods:
+            log.info(
+                f"fetch_all_payperiods: full aggregated list: {json.dumps(all_pay_periods, default=str)}")
+        else:
+            log.info("fetch_all_payperiods: aggregated list is empty")
+        return all_pay_periods
+
     OMITTED_STATUSES = {"ENTRY", "INITIAL"}
 
     @staticmethod
@@ -37,20 +92,20 @@ class PayrollStatusLookupUtils:
             if isinstance(value, str) and value.strip():
                 return value
             for nested_value in data.values():
-                found = PayrollStatusLookupUtils.find_payperiod_status_value(nested_value)
+                found = PayrollStatusLookupUtils.find_payperiod_status_value(
+                    nested_value)
                 if found:
                     return found
         elif isinstance(data, list):
             for item in data:
-                found = PayrollStatusLookupUtils.find_payperiod_status_value(item)
+                found = PayrollStatusLookupUtils.find_payperiod_status_value(
+                    item)
                 if found:
                     return found
         return None
 
     @staticmethod
-    def extract_payperiod_status_from_payload(
-        payload: object, requested_payperiod_id: str
-    ) -> str | None:
+    def extract_payperiod_status_from_payload(payload: object, requested_payperiod_id: str) -> str | None:
         if not isinstance(payload, dict):
             return None
 
@@ -87,11 +142,9 @@ class PayrollStatusLookupUtils:
     ) -> str | None:
         if not isinstance(payload, dict):
             return None
-
         content = payload.get("content")
         if not isinstance(content, dict):
             return None
-
         pay_periods = content.get("payPeriods")
         if not isinstance(pay_periods, list):
             return None
@@ -164,7 +217,8 @@ class PayrollStatusLookupUtils:
     def extract_payperiod_status_map_by_check_date(
         payload: object, requested_check_date: str
     ) -> dict[str, str]:
-        full_map = PayrollStatusLookupUtils.extract_payperiod_status_map(payload)
+        full_map = PayrollStatusLookupUtils.extract_payperiod_status_map(
+            payload)
         if not full_map:
             return {}
 
@@ -274,7 +328,8 @@ class PayrollApiUtils:
             raise ValueError("PAYROLL_STATUS_API_BASE_URL not set")
 
         effective_metadata = metadata or {}
-        payx_consumer = CrossAppMappingUtility.resolve_payx_consumer(effective_metadata)
+        payx_consumer = CrossAppMappingUtility.resolve_payx_consumer(
+            effective_metadata)
         if not payx_consumer:
             raise ValueError(
                 "Missing required x-payx-cnsmr value. "
@@ -297,7 +352,7 @@ class PayrollApiUtils:
             "projection": PayrollApiUtils.DEFAULT_PROJECTION,
             "userguid": CrossAppMappingUtility.DEFAULT_USERGUID,
             "cltacctnbrs": resolved_client_account,
-            "page": PayrollApiUtils.DEFAULT_PAGE,
+            "page": effective_metadata.get("page", PayrollApiUtils.DEFAULT_PAGE),
         }
         if requested_check_date:
             query["asof"] = requested_check_date
@@ -309,7 +364,8 @@ class PayrollApiUtils:
             )
         query = {k: v for k, v in query.items() if v is not None}
 
-        url = settings.payroll_status_api_base_url.rstrip("/") + "/payperiods?" + urlencode(query)
+        url = settings.payroll_status_api_base_url.rstrip(
+            "/") + "/payperiods?" + urlencode(query)
 
         headers = {
             "Accept": "application/json",
@@ -322,7 +378,8 @@ class PayrollApiUtils:
 
         ssl_ctx = None
         if settings.payroll_status_api_ca_bundle_path:
-            ssl_ctx = ssl.create_default_context(cafile=settings.payroll_status_api_ca_bundle_path)
+            ssl_ctx = ssl.create_default_context(
+                cafile=settings.payroll_status_api_ca_bundle_path)
         elif not settings.payroll_status_api_verify_ssl:
             ssl_ctx = ssl._create_unverified_context()  # dev-only
 
@@ -405,14 +462,16 @@ class CurrentPayrollSelectionUtils:
         item = closest[0]
         return CurrentPayrollSelection(
             check_date=item.get("checkDate"),
-            submission_time=item.get("payPeriodStatusEventTime") or item.get("checkDate"),
+            submission_time=item.get(
+                "payPeriodStatusEventTime") or item.get("checkDate"),
             status=item.get("payPeriodStatusValue"),
             payperiod_id=item.get("payPeriodId"),
         )
 
     @staticmethod
     def llm_current_selection(prompt: str, candidates: list[dict[str, str]]) -> CurrentPayrollSelection | None:
-        selection = LlmSelectionUtility.select_current_payroll(prompt, candidates)
+        selection = LlmSelectionUtility.select_current_payroll(
+            prompt, candidates)
         if not selection:
             return None
         # Correlate the LLM selection back to a candidate to retrieve payperiod_id

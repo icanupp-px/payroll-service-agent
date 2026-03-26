@@ -53,39 +53,34 @@ def fetch_status_by_check_date(state: PayrollServiceGraphState) -> PayrollServic
         return state
 
     try:
-        payload = PayrollApiUtils.fetch_payperiods_payload(
+        all_pay_periods = PayrollStatusLookupUtils.fetch_all_payperiods(
             metadata,
             requested_check_date=requested_check_date,
             prompt=state.prompt,
         )
-        status_by_event_time = (
-            PayrollStatusLookupUtils.extract_payperiod_status_map_by_event_time_and_check_date(
-                payload, requested_check_date
-            )
-        )
-        status_by_event_time = {
-            key: value
-            for key, value in status_by_event_time.items()
-            if PayrollStatusLookupUtils.is_allowed_status(value)
-        }
+        log.info(f"Aggregated payperiods list (all pages): {json.dumps(all_pay_periods, default=str)[:1000]}" if all_pay_periods else "No payperiods found.")
+        # Aggregate status_by_event_time across all pages
+        status_by_event_time = {}
+        for item in all_pay_periods:
+            if str(item.get("checkDate")) == requested_check_date:
+                event_time = item.get("payPeriodStatusEventTime")
+                status_value = item.get("payPeriodStatusValue")
+                if event_time and status_value and PayrollStatusLookupUtils.is_allowed_status(status_value):
+                    status_by_event_time[event_time] = status_value
         if status_by_event_time:
             state.payperiod_status_by_event_time = status_by_event_time
         else:
-            state.payperiod_status_by_event_time = (
-                PayrollStatusLookupUtils.extract_payperiod_status_map_by_check_date(
-                    payload, requested_check_date
-                )
-            )
-            state.payperiod_status_by_event_time = {
-                key: value
-                for key, value in state.payperiod_status_by_event_time.items()
-                if PayrollStatusLookupUtils.is_allowed_status(value)
-            }
-
-        statuses = PayrollStatusLookupUtils.extract_payperiod_statuses_by_check_date(
-            payload, requested_check_date
-        )
-        statuses = [status for status in statuses if PayrollStatusLookupUtils.is_allowed_status(status)]
+            # Fallback: aggregate by check date only
+            status_by_id = {}
+            for item in all_pay_periods:
+                if str(item.get("checkDate")) == requested_check_date:
+                    payperiod_id = item.get("payPeriodId")
+                    status_value = item.get("payPeriodStatusValue")
+                    if payperiod_id and status_value and PayrollStatusLookupUtils.is_allowed_status(status_value):
+                        status_by_id[str(payperiod_id)] = status_value
+            state.payperiod_status_by_event_time = status_by_id
+        # Aggregate statuses for state.status
+        statuses = [item.get("payPeriodStatusValue") for item in all_pay_periods if str(item.get("checkDate")) == requested_check_date and PayrollStatusLookupUtils.is_allowed_status(item.get("payPeriodStatusValue"))]
         state.status = ", ".join(statuses) if statuses else "unknown"
 
         # Holds flow: capture payperiod_id for qualifying payroll statuses
@@ -134,12 +129,13 @@ def fetch_status_by_current_payroll(
 
     metadata = state.metadata or {}
     try:
-        payload = PayrollApiUtils.fetch_payperiods_payload(
+        all_pay_periods = PayrollStatusLookupUtils.fetch_all_payperiods(
             metadata,
             requested_check_date=None,
             prompt=state.prompt,
         )
-        candidates = CurrentPayrollSelectionUtils.extract_payperiod_candidates(payload)
+        log.info(f"Aggregated payperiods list (all pages): {json.dumps(all_pay_periods, default=str)[:1000]}" if all_pay_periods else "No payperiods found.")
+        candidates = CurrentPayrollSelectionUtils.extract_payperiod_candidates({"content": {"payPeriods": all_pay_periods}})
         if not candidates:
             state.status = "unknown"
             state.payperiod_status_by_event_time = None
