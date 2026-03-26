@@ -118,9 +118,6 @@ def fetch_status_by_check_date(state: PayrollServiceGraphState) -> PayrollServic
     return state
 
 
-def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    return fetch_status_by_check_date(state)
-
 
 def fetch_status_by_current_payroll(
     state: PayrollServiceGraphState,

@@ -79,12 +79,6 @@ def parse_prompt(prompt: str) -> tuple[str | None, bool, bool]:
     has_check_date_phrase = bool(re.search(r"\bcheck\s*date\b", prompt_text, re.IGNORECASE))
     has_explicit_current_phrase = bool(CURRENT_PAYROLL_PATTERN.search(prompt or ""))
     has_payroll_intent = bool(PAYROLL_STATUS_INTENT_PATTERN.search(prompt or ""))
-    has_check_date_phrase = bool(
-        re.search(r"\bcheck\s*date\b", prompt_text, re.IGNORECASE))
-    has_explicit_current_phrase = bool(
-        CURRENT_PAYROLL_PATTERN.search(prompt or ""))
-    has_payroll_intent = bool(
-        PAYROLL_STATUS_INTENT_PATTERN.search(prompt or ""))
     is_current_payroll_prompt = bool(
         not check_date
         and not has_check_date_phrase
@@ -98,7 +92,6 @@ def parse_prompt(prompt: str) -> tuple[str | None, bool, bool]:
 def format_answer(response, check_date: str | None = None) -> str:
     effective_check_date = check_date or getattr(
         response, "resolved_check_date", None)
-    effective_check_date = check_date or getattr(response, "resolved_check_date", None)
 
     # Holds flow: payperiod_holds is set (even if empty) when holds were fetched
     if response.payperiod_holds is not None:
@@ -171,10 +164,6 @@ def process_prompt(
             metadata["checkdateasof"] = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
     elif is_current_payroll_prompt:
         metadata["checkdateasof"] = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
-    flow_type = "check_date"
-    if is_current_payroll_prompt:
-        metadata["checkdateasof"] = (datetime.now(
-            timezone.utc) - timedelta(days=30)).date().isoformat()
         flow_type = "current_payroll"
     else:
         flow_type = "check_date"
