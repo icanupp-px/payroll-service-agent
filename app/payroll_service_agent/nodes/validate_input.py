@@ -36,7 +36,9 @@ VALID_CHECK_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def extract_input_fields(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-   # Pull client number, payperiod ID or check date off the message.
+    # Pull client number, payperiod ID or check date off the message.
+    # Can fetch prompts like this:
+    # prompt = PROMPTS["extract_client_information"]
     return state
 
 
