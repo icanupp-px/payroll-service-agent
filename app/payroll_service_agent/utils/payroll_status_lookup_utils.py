@@ -18,6 +18,7 @@ class CurrentPayrollSelection(BaseModel):
     check_date: str | None = None
     submission_time: str | None = None
     status: str | None = None
+    payperiod_id: str | None = None
 
 
 class PayrollStatusLookupUtils:
@@ -221,6 +222,36 @@ class PayrollStatusLookupUtils:
 
         return status_by_event_time
 
+    @staticmethod
+    def extract_payperiod_id_for_qualified_status(
+        payload: object,
+        requested_check_date: str,
+        qualifying_statuses: set[str],
+    ) -> str | None:
+        """Return the first payPeriodId whose status is in qualifying_statuses for the given check date."""
+        normalized_qualifying_statuses = {
+            status.strip().upper() for status in qualifying_statuses if isinstance(status, str)
+        }
+        if not isinstance(payload, dict):
+            return None
+        content = payload.get("content")
+        if not isinstance(content, dict):
+            return None
+        pay_periods = content.get("payPeriods")
+        if not isinstance(pay_periods, list):
+            return None
+        for item in pay_periods:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("checkDate")) != requested_check_date:
+                continue
+            status = item.get("payPeriodStatusValue")
+            if isinstance(status, str) and status.strip().upper() in normalized_qualifying_statuses:
+                payperiod_id = item.get("payPeriodId")
+                if payperiod_id is not None:
+                    return str(payperiod_id)
+        return None
+
 
 class PayrollApiUtils:
     ALL_PAYPERIOD_STATUSES_WITH_TIME_DELAY = (
@@ -256,6 +287,10 @@ class PayrollApiUtils:
         )
         if resolution_error or not resolved_client_account:
             raise ValueError(INVALID_CLIENT_ACCOUNT_MESSAGE)
+
+        # Persist the resolved CA client account so downstream nodes (e.g. fetch_holds)
+        # can read it from the shared metadata dict without re-resolving.
+        effective_metadata["cltacctnbrs"] = resolved_client_account
 
         query = {
             "status": PayrollApiUtils.ALL_PAYPERIOD_STATUSES_WITH_TIME_DELAY,
@@ -322,11 +357,13 @@ class CurrentPayrollSelectionUtils:
                 or not PayrollStatusLookupUtils.is_allowed_status(status)
             ):
                 continue
+            payperiod_id = item.get("payPeriodId")
             candidates.append(
                 {
                     "checkDate": check_date,
                     "payPeriodStatusValue": status,
                     "payPeriodStatusEventTime": submission_time or "",
+                    "payPeriodId": str(payperiod_id) if payperiod_id is not None else None,
                 }
             )
         return candidates
@@ -370,6 +407,7 @@ class CurrentPayrollSelectionUtils:
             check_date=item.get("checkDate"),
             submission_time=item.get("payPeriodStatusEventTime") or item.get("checkDate"),
             status=item.get("payPeriodStatusValue"),
+            payperiod_id=item.get("payPeriodId"),
         )
 
     @staticmethod
@@ -377,8 +415,16 @@ class CurrentPayrollSelectionUtils:
         selection = LlmSelectionUtility.select_current_payroll(prompt, candidates)
         if not selection:
             return None
+        # Correlate the LLM selection back to a candidate to retrieve payperiod_id
+        payperiod_id = None
+        for c in candidates:
+            if c.get("checkDate") == selection.check_date:
+                if not selection.submission_time or c.get("payPeriodStatusEventTime", "") == selection.submission_time:
+                    payperiod_id = c.get("payPeriodId")
+                    break
         return CurrentPayrollSelection(
             check_date=selection.check_date,
             submission_time=selection.submission_time,
             status=selection.status,
+            payperiod_id=payperiod_id,
         )
