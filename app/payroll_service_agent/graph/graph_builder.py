@@ -10,12 +10,30 @@ from app.payroll_service_agent.nodes.payroll_status_lookup import (
     fetch_status_by_current_payroll,
     request_router,
 )
+from app.payroll_service_agent.nodes.validate_input import (
+    extract_input_fields,
+    validate_input_fields,
+    validation_complete,
+)
 
 
-@lru_cache(maxsize=1)
+def create_input_validation_subgraph():
+    workflow = StateGraph(PayrollServiceGraphState, output_schema=PayrollServiceGraphState)
+
+    workflow.add_node("extract_input_fields", extract_input_fields)
+    workflow.add_node("validate_input_fields", validate_input_fields)
+    workflow.add_node("validation_complete", validation_complete)
+
+    workflow.add_edge(START, "extract_input_fields")
+    workflow.add_edge("extract_input_fields", "validate_input_fields")
+    workflow.add_edge("validate_input_fields", "validation_complete")
+    workflow.add_edge("validation_complete", END)
+
+    return workflow.compile()
+
+
 def create_payroll_status_lookup_subgraph():
-    workflow = StateGraph(PayrollServiceGraphState,
-                          output=PayrollServiceGraphState)
+    workflow = StateGraph(PayrollServiceGraphState, output_schema=PayrollServiceGraphState)
 
     workflow.add_node("fetch_status_by_check_date", fetch_status_by_check_date)
     workflow.add_node("fetch_status_by_current_payroll",
@@ -39,17 +57,16 @@ def create_payroll_status_lookup_subgraph():
     return workflow.compile()
 
 
-@lru_cache(maxsize=1)
 def build_graph():
-    workflow = StateGraph(PayrollServiceGraphState,
-                          output=PayrollServiceGraphState)
+    workflow = StateGraph(PayrollServiceGraphState, output_schema=PayrollServiceGraphState)
 
     workflow.add_node("request_router", request_router)
-    workflow.add_node("payroll_status_lookup",
-                      create_payroll_status_lookup_subgraph())
+    workflow.add_node("input_validation", create_input_validation_subgraph())
+    workflow.add_node("payroll_status_lookup", create_payroll_status_lookup_subgraph())
 
     workflow.add_edge(START, "request_router")
-    workflow.add_edge("request_router", "payroll_status_lookup")
+    workflow.add_edge("request_router", "input_validation")
+    workflow.add_edge("input_validation", "payroll_status_lookup")
     workflow.add_edge("payroll_status_lookup", END)
 
     return workflow.compile()
