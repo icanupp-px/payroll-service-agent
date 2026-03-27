@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 
 from app.payroll_service_agent.config.config import settings
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
+from app.payroll_service_agent.utils.crossapp_mapping_utility import CrossAppMappingUtility
 from app.payroll_service_agent.utils.logging_utils import setup_logger
 from app.payroll_service_agent.utils.payroll_status_lookup_utils import (
     CurrentPayrollSelectionUtils,
@@ -30,6 +31,9 @@ def _select_payroll_status_branch(state: PayrollServiceGraphState) -> str:
 
     if flow_type == "current_payroll":
         return "fetch_status_by_current_payroll"
+    if flow_type == "holds":
+        # Route holds to check-date or current-payroll depending on whether a date was supplied
+        return "fetch_status_by_check_date" if has_check_date else "fetch_status_by_current_payroll"
     if has_check_date:
         return "fetch_status_by_check_date"
     return "fetch_status_by_current_payroll"
@@ -49,40 +53,44 @@ def fetch_status_by_check_date(state: PayrollServiceGraphState) -> PayrollServic
         return state
 
     try:
-        payload = PayrollApiUtils.fetch_payperiods_payload(
+        all_pay_periods = PayrollStatusLookupUtils.fetch_all_payperiods(
             metadata,
             requested_check_date=requested_check_date,
             prompt=state.prompt,
         )
-        status_by_event_time = (
-            PayrollStatusLookupUtils.extract_payperiod_status_map_by_event_time_and_check_date(
-                payload, requested_check_date
-            )
-        )
-        status_by_event_time = {
-            key: value
-            for key, value in status_by_event_time.items()
-            if PayrollStatusLookupUtils.is_allowed_status(value)
-        }
+        log.info(f"Aggregated payperiods list (all pages): {json.dumps(all_pay_periods, default=str)[:1000]}" if all_pay_periods else "No payperiods found.")
+        # Aggregate status_by_event_time across all pages
+        status_by_event_time = {}
+        for item in all_pay_periods:
+            if str(item.get("checkDate")) == requested_check_date:
+                event_time = item.get("payPeriodStatusEventTime")
+                status_value = item.get("payPeriodStatusValue")
+                if event_time and status_value and PayrollStatusLookupUtils.is_allowed_status(status_value):
+                    status_by_event_time[event_time] = status_value
         if status_by_event_time:
             state.payperiod_status_by_event_time = status_by_event_time
         else:
-            state.payperiod_status_by_event_time = (
-                PayrollStatusLookupUtils.extract_payperiod_status_map_by_check_date(
-                    payload, requested_check_date
-                )
-            )
-            state.payperiod_status_by_event_time = {
-                key: value
-                for key, value in state.payperiod_status_by_event_time.items()
-                if PayrollStatusLookupUtils.is_allowed_status(value)
-            }
-
-        statuses = PayrollStatusLookupUtils.extract_payperiod_statuses_by_check_date(
-            payload, requested_check_date
-        )
-        statuses = [status for status in statuses if PayrollStatusLookupUtils.is_allowed_status(status)]
+            # Fallback: aggregate by check date only
+            status_by_id = {}
+            for item in all_pay_periods:
+                if str(item.get("checkDate")) == requested_check_date:
+                    payperiod_id = item.get("payPeriodId")
+                    status_value = item.get("payPeriodStatusValue")
+                    if payperiod_id and status_value and PayrollStatusLookupUtils.is_allowed_status(status_value):
+                        status_by_id[str(payperiod_id)] = status_value
+            state.payperiod_status_by_event_time = status_by_id
+        # Aggregate statuses for state.status
+        statuses = [item.get("payPeriodStatusValue") for item in all_pay_periods if str(item.get("checkDate")) == requested_check_date and PayrollStatusLookupUtils.is_allowed_status(item.get("payPeriodStatusValue"))]
         state.status = ", ".join(statuses) if statuses else "unknown"
+
+        # Holds flow: capture payperiod_id for qualifying payroll statuses
+        if (state.flow_type or "").strip().lower() == "holds":
+            _HOLDS_QUALIFYING_STATUSES = {"Released", "Processing"}
+            payperiod_id = PayrollStatusLookupUtils.extract_payperiod_id_for_qualified_status(
+                payload, requested_check_date, _HOLDS_QUALIFYING_STATUSES
+            )
+            if payperiod_id:
+                state.payperiod_id = payperiod_id
     except ValueError as e:
         log.error(f"Payperiod list API call skipped: {e}")
         if str(e) == INVALID_CLIENT_ACCOUNT_MESSAGE:
@@ -110,9 +118,6 @@ def fetch_status_by_check_date(state: PayrollServiceGraphState) -> PayrollServic
     return state
 
 
-def fetch_status(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
-    return fetch_status_by_check_date(state)
-
 
 def fetch_status_by_current_payroll(
     state: PayrollServiceGraphState,
@@ -121,12 +126,13 @@ def fetch_status_by_current_payroll(
 
     metadata = state.metadata or {}
     try:
-        payload = PayrollApiUtils.fetch_payperiods_payload(
+        all_pay_periods = PayrollStatusLookupUtils.fetch_all_payperiods(
             metadata,
             requested_check_date=None,
             prompt=state.prompt,
         )
-        candidates = CurrentPayrollSelectionUtils.extract_payperiod_candidates(payload)
+        log.info(f"Aggregated payperiods list (all pages): {json.dumps(all_pay_periods, default=str)[:1000]}" if all_pay_periods else "No payperiods found.")
+        candidates = CurrentPayrollSelectionUtils.extract_payperiod_candidates({"content": {"payPeriods": all_pay_periods}})
         if not candidates:
             state.status = "unknown"
             state.payperiod_status_by_event_time = None
@@ -153,6 +159,15 @@ def fetch_status_by_current_payroll(
         submission_time = selection.submission_time or selection.check_date or "current"
         state.payperiod_status_by_event_time = {submission_time: selection.status}
         state.status = selection.status
+
+        # Holds flow: capture payperiod_id when status qualifies
+        if (
+            (state.flow_type or "").strip().lower() == "holds"
+            and isinstance(selection.status, str)
+            and selection.status.strip().upper() in {"RELEASED", "PROCESSING"}
+        ):
+            if selection.payperiod_id:
+                state.payperiod_id = selection.payperiod_id
 
         if selection.check_date:
             metadata["asof"] = selection.check_date
@@ -187,9 +202,19 @@ def fetch_status_by_current_payroll(
 def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
     log.info("Fetching payroll holds")
     metadata = state.metadata or {}
+    is_holds_flow = (state.flow_type or metadata.get("flow_type") or "").strip().lower() == "holds"
     payperiod_id = getattr(state, "payperiod_id", None) or metadata.get("payperiod_id")
     if not payperiod_id:
-        log.warning("No payperiod_id provided; skipping holds fetch.")
+        if is_holds_flow:
+            # For holds prompts, this usually means no qualifying status (Released/Processing)
+            # was found for the selected payroll, so return an explicit no-holds result.
+            log.info(
+                "No qualifying payperiod_id found for holds flow; "
+                "returning empty holds result without calling holds API."
+            )
+            state.holds = []
+        else:
+            log.warning("No payperiod_id provided; skipping holds fetch.")
         return state
 
     if not settings.payroll_holds_api_base_url:
@@ -214,9 +239,26 @@ def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
         state.holds = None
         return state
 
+    resolved_client_account = metadata.get("cltacctnbrs")
+    if not resolved_client_account:
+        resolved_client_account, _ = CrossAppMappingUtility.resolve_ca_client_account_number(
+            metadata,
+            state.prompt,
+        )
+        if resolved_client_account:
+            metadata["cltacctnbrs"] = resolved_client_account
+            state.metadata = metadata
+        else:
+            log.error(
+                "Missing required cltacctnbrs value for payroll holds call. "
+                "Could not resolve CA client account from prompt/metadata."
+            )
+            state.holds = None
+            return state
+
     query = {
         "userguid": metadata.get("userguid"),
-        "cltacctnbrs": metadata.get("cltacctnbrs"),
+        "cltacctnbrs": resolved_client_account,
     }
     query = {key: value for key, value in query.items() if value is not None}
     url = settings.payroll_holds_api_base_url.rstrip("/") + f"/{payperiod_id}?" + urlencode(query)
@@ -268,8 +310,8 @@ def fetch_holds(state: PayrollServiceGraphState) -> PayrollServiceGraphState:
                         "active": hold.get("active"),
                     }
                     holds.append(filtered)
-            state.holds = holds if holds else None
-            log.info(f"Fetched {len(state.holds) if state.holds else 0} holds.")
+            state.holds = holds
+            log.info(f"Fetched {len(state.holds)} holds.")
     except HTTPError as e:
         response_body = ""
         try:

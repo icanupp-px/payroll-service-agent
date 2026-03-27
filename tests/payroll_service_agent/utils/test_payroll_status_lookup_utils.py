@@ -43,6 +43,7 @@ def test_extract_payperiod_candidates_omits_disallowed_and_invalid_items() -> No
             "checkDate": "2025-03-31",
             "payPeriodStatusValue": "Completed by MEC",
             "payPeriodStatusEventTime": "2025-03-31T12:30:00Z",
+            "payPeriodId": None,
         }
     ]
 

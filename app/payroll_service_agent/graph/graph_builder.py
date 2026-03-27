@@ -1,3 +1,4 @@
+from functools import lru_cache
 from langgraph.graph.state import END, START, StateGraph
 
 from app.payroll_service_agent.graph.states.payroll_status_lookup import PayrollServiceGraphState
@@ -35,7 +36,8 @@ def create_payroll_status_lookup_subgraph():
     workflow = StateGraph(PayrollServiceGraphState, output_schema=PayrollServiceGraphState)
 
     workflow.add_node("fetch_status_by_check_date", fetch_status_by_check_date)
-    workflow.add_node("fetch_status_by_current_payroll", fetch_status_by_current_payroll)
+    workflow.add_node("fetch_status_by_current_payroll",
+                      fetch_status_by_current_payroll)
     workflow.add_node("fetch_holds", fetch_holds)
     workflow.add_node("compose_result", compose_result)
 

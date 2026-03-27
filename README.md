@@ -87,6 +87,7 @@ app/
 - Supported input modes are:
     - Check-date flow
     - Current-payroll flow
+    - Holds flow
 - payperiod_id-based input is not part of the user/API workflow.
 - Provide the ENT client account number in the request prompt (for example: `ENT:008WQ28JLJR1C7M97QIQ`).
 - No metadata input is required from chatbot users.
@@ -97,8 +98,13 @@ app/
     - `x-payx-cnsmr`: `CA DOMAIN`
 - Additional payperiod request rule:
     - If prompt contains a check date, `checkdateasof` is set to that date.
-    - For current-payroll prompts, `checkdateasof` is set to system date minus 30 days (UTC).
+    - For current-payroll and holds prompts without a date, `checkdateasof` is set to system date minus 30 days (UTC).
 - `Entry` and `Initial` payroll statuses are omitted from this flow.
+- **Holds flow specifics:**
+    - Triggered when the prompt contains keywords: `hold`, `on hold`, or `payroll hold`.
+    - Checks payroll status first; if status is `Released` or `Processing`, the `payPeriodId` is captured and passed to the holds API.
+    - Hold reasons (`systemHoldType`) from the API response are returned as a formatted list.
+    - If no holds exist for the payperiod, the response says so explicitly.
 - The service calls:
     - `https://ca-ose-crossappmappings-v1-svc-pyx.n2a-lb.paychex.com/crossappmappings?userguid=<...>&cltacctnbrs=<ENT...>`
     - Header: `x-payx-cnsmr: CA DOMAIN` (or your environment-specific consumer value)
@@ -140,6 +146,27 @@ app/
             }
         }
         ```
+        * Sample Request/Response - Holds flow:
+        ```json
+        {
+            "request_id": "req-12347",
+            "prompt": "Has payroll been entered but on hold for ENT:008WQ28JLWTDMQHZ19WM?",
+            "flow_type": "holds"
+        }
+        ```
+        ```json
+        {
+            "request_id": "req-12347",
+            "payperiod_holds": [
+                {
+                    "systemHoldType": "PQA_PAYROLL",
+                    "clientPayrollHoldId": 970007777584090,
+                    "payPeriodId": 970007732392855,
+                    "active": true
+                }
+            ]
+        }
+        ```
 
 ## LangGraph Playground
 
@@ -153,6 +180,7 @@ Chatbot supports:
 
 - Check-date prompts
 - Current-payroll prompts
+- Holds prompts (e.g. *"Has payroll been entered but on hold for ENT:008WQ28JLWTDMQHZ19WM?"*)
 
 1. Create a virtual environment (first time only):
 

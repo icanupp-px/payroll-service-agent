@@ -11,7 +11,8 @@ class ProcessRequest(BaseModel):
     @model_validator(mode="after")
     def validate_request_scope(self) -> "ProcessRequest":
         flow_type = (self.flow_type or "").strip().lower()
-        if flow_type != "current_payroll" and not self.check_date:
+        flow_types_without_checkdate = {"current_payroll", "holds"}
+        if flow_type not in flow_types_without_checkdate and not self.check_date:
             raise ValueError(
                 "Please provide checkdate to get the payroll status"
             )
